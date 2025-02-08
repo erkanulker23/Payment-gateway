@@ -1,4 +1,5 @@
 import { Provider, InsertProvider } from "@shared/schema";
+import { pgTable, serial, integer, numeric, text, timestamp, json } from 'drizzle-orm/pg-core';
 
 export interface IStorage {
   getProviders(): Promise<Provider[]>;
@@ -77,3 +78,19 @@ export class MemStorage implements IStorage {
 }
 
 export const storage = new MemStorage();
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  providerId: integer("provider_id").notNull(),
+  amount: numeric("amount").notNull(),
+  currency: text("currency").notNull(),
+  installment: integer("installment").notNull(),
+  status: text("status", { enum: ["success", "failed", "pending"] }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  metadata: json("metadata")
+});
+
+export interface IStorage {
+  // ... mevcut methodlar ...
+  createPayment(data: typeof payments.$inferInsert): Promise<typeof payments.$inferSelect>;
+  getPayments(): Promise<typeof payments.$inferSelect[]>;
+}

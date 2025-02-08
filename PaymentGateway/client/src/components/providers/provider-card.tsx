@@ -19,6 +19,13 @@ const providerIcons: Record<string, IconType> = {
   paybull: SiPaypal
 };
 
+const PROVIDER_LOGOS = {
+  iyzico: "https://www.iyzico.com/assets/images/iyzico-logo.svg",
+  paytr: "https://www.paytr.com/wp-content/uploads/paytr-logo.png",
+  paynkolay: "https://www.paynkolay.com/assets/images/logo.svg",
+  paybull: "https://www.paybull.com/assets/images/logo.png"
+};
+
 export function ProviderCard({ provider }: { provider: Provider }) {
   const { toast } = useToast();
   const Icon = providerIcons[provider.type];
@@ -65,7 +72,11 @@ export function ProviderCard({ provider }: { provider: Provider }) {
       <Card className="mt-4">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="flex items-center space-x-2">
-            {Icon && <Icon className="h-6 w-6" />}
+            <img 
+              src={PROVIDER_LOGOS[provider.type as keyof typeof PROVIDER_LOGOS]} 
+              alt={provider.name}
+              className="h-6 w-auto object-contain"
+            />
             <CardTitle className="text-xl font-medium">
               {provider.name}
             </CardTitle>

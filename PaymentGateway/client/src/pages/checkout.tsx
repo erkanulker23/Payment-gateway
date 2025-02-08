@@ -1,78 +1,60 @@
 import { useQuery } from "@tanstack/react-query";
-import { Provider } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState } from "react";
-import { apiRequest } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useState } from "react";
+import { Provider } from "@shared/schema";
 
-// Örnek ürün bilgisi
 const sampleProduct = {
   id: 1,
-  name: "Test Ürünü",
-  price: 99.99,
-  currency: "TRY"
+  name: "Örnek Ürün",
+  price: 9600,
+  currency: "TL"
 };
-
-const paymentFormSchema = z.object({
-  cardNumber: z.string().min(16, "Kart numarası 16 haneli olmalıdır").max(16),
-  expiryMonth: z.string().min(2, "Ay 2 haneli olmalıdır").max(2),
-  expiryYear: z.string().min(2, "Yıl 2 haneli olmalıdır").max(2),
-  cvv: z.string().min(3, "CVV 3 haneli olmalıdır").max(3),
-  cardHolderName: z.string().min(1, "Kart sahibinin adını giriniz")
-});
-
-type PaymentFormData = z.infer<typeof paymentFormSchema>;
 
 export default function Checkout() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
 
-  const form = useForm<PaymentFormData>({
-    resolver: zodResolver(paymentFormSchema),
-    defaultValues: {
-      cardNumber: "",
-      expiryMonth: "",
-      expiryYear: "",
-      cvv: "",
-      cardHolderName: ""
-    }
-  });
-
   const { data: providers } = useQuery<Provider[]>({ 
     queryKey: ["/api/providers"]
   });
 
-  const activeProvider = providers?.find(p => p.isActive);
+  const { data: bankInstallments = [], error } = useQuery({
+    queryKey: ["/api/payment/installments", sampleProduct.price],
+    queryFn: async () => {
+      try {
+        const response = await fetch(`/api/payment/installments?amount=${sampleProduct.price}`);
+        if (!response.ok) {
+          throw new Error("Taksit bilgileri alınamadı");
+        }
+        return response.json();
+      } catch (err) {
+        console.error("Taksit bilgisi alma hatası:", err);
+        throw err;
+      }
+    }
+  });
 
-  const handlePayment = async (formData: PaymentFormData) => {
+  const handlePayment = async (installment: number, bankName: string) => {
     setLoading(true);
     try {
-      const response = await apiRequest("POST", "/api/payment/process", {
-        amount: sampleProduct.price,
-        currency: sampleProduct.currency,
-        productId: sampleProduct.id,
-        productName: sampleProduct.name,
-        cardDetails: {
-          number: formData.cardNumber,
-          expiryMonth: formData.expiryMonth,
-          expiryYear: formData.expiryYear,
-          cvv: formData.cvv,
-          holderName: formData.cardHolderName
-        }
+      const response = await fetch("/api/payment/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: sampleProduct.price,
+          currency: sampleProduct.currency,
+          installment,
+          bankName
+        })
       });
+
       const result = await response.json();
-      toast({
-        title: "Ödeme başarılı",
-        description: `İşlem ID: ${result.transactionId}`
-      });
-      form.reset();
+      if (result.error) throw new Error(result.error);
+      if (result.redirectUrl) window.location.href = result.redirectUrl;
+
     } catch (error) {
       toast({
         title: "Ödeme başarısız",
@@ -84,117 +66,120 @@ export default function Checkout() {
     }
   };
 
+  const { data: payments = [], isLoading: isPaymentsLoading } = useQuery({
+    queryKey: ["/api/payments"],
+    queryFn: async () => {
+      const response = await fetch('/api/payments');
+      if (!response.ok) {
+        throw new Error('Ödemeler alınamadı');
+      }
+      return response.json();
+    }
+  });
+
   return (
-    <div className="max-w-md mx-auto mt-8">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <Card>
         <CardHeader>
-          <CardTitle>Ödeme Sayfası</CardTitle>
+          <CardTitle>Ödeme Detayları</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex justify-between">
-            <span>Ürün:</span>
-            <span>{sampleProduct.name}</span>
+        <CardContent>
+          <div className="space-y-2">
+            <p className="text-lg font-semibold">Toplam Tutar: {sampleProduct.price} {sampleProduct.currency}</p>
+            <Button onClick={() => handlePayment(1, "")}>Tek Çekim Ödeme Yap</Button>
           </div>
-          <div className="flex justify-between font-bold">
-            <span>Tutar:</span>
-            <span>{sampleProduct.price} {sampleProduct.currency}</span>
-          </div>
-          {activeProvider && (
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Ödeme yöntemi:</span>
-              <span>{activeProvider.name} {activeProvider.isTestMode ? "(Test Modu)" : ""}</span>
-            </div>
-          )}
-
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handlePayment)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="cardNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Kart Numarası</FormLabel>
-                    <FormControl>
-                      <Input placeholder="1234 5678 9012 3456" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="expiryMonth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Ay</FormLabel>
-                      <FormControl>
-                        <Input placeholder="MM" maxLength={2} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="expiryYear"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Yıl</FormLabel>
-                      <FormControl>
-                        <Input placeholder="YY" maxLength={2} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="cvv"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>CVV</FormLabel>
-                      <FormControl>
-                        <Input placeholder="123" maxLength={3} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="cardHolderName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Kart Sahibinin Adı</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Ad Soyad" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Button 
-                type="submit"
-                className="w-full" 
-                disabled={loading || !activeProvider}
-              >
-                {!activeProvider 
-                  ? "Aktif ödeme yöntemi bulunamadı" 
-                  : loading 
-                    ? "İşleniyor..." 
-                    : "Ödemeyi Tamamla"}
-              </Button>
-            </form>
-          </Form>
         </CardContent>
-        <CardFooter></CardFooter>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {bankInstallments.map((bank: any) => (
+          <Card key={bank.bankName} className="overflow-hidden">
+            <CardHeader className="bg-card border-b">
+              <div className="flex items-center gap-4">
+                {bank.bankLogo && (
+                  <img src={bank.bankLogo} alt={bank.bankName} className="h-8 object-contain" />
+                )}
+                <CardTitle className="text-lg">{bank.bankName}</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Taksit Sayısı</TableHead>
+                    <TableHead>Taksit (TL)</TableHead>
+                    <TableHead>Toplam (TL)</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bank.installments.map((inst: any) => (
+                    <TableRow key={inst.count}>
+                      <TableCell>{inst.count}</TableCell>
+                      <TableCell>{inst.monthlyAmount.toLocaleString('tr-TR')}</TableCell>
+                      <TableCell>{inst.totalAmount.toLocaleString('tr-TR')}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          onClick={() => handlePayment(inst.count, bank.bankName)}
+                          disabled={loading}
+                        >
+                          {loading ? "İşleniyor..." : "Ödeme Yap"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Ödeme Geçmişi</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tarih</TableHead>
+                <TableHead>Tutar</TableHead>
+                <TableHead>Taksit</TableHead>
+                <TableHead>Durum</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isPaymentsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center">Yükleniyor...</TableCell>
+                </TableRow>
+              ) : payments.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center">Henüz ödeme bulunmuyor</TableCell>
+                </TableRow>
+              ) : (
+                payments.map((payment: any) => (
+                  <TableRow key={payment.id}>
+                    <TableCell>{new Date(payment.createdAt).toLocaleString('tr-TR')}</TableCell>
+                    <TableCell>{payment.amount} {payment.currency}</TableCell>
+                    <TableCell>{payment.installment}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded-full text-sm ${
+                        payment.status === 'success' ? 'bg-green-100 text-green-800' :
+                        payment.status === 'failed' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {payment.status === 'success' ? 'Başarılı' :
+                         payment.status === 'failed' ? 'Başarısız' : 'Beklemede'}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
     </div>
   );

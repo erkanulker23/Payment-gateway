@@ -39,7 +39,21 @@ export function registerRoutes(app: Express): Server {
     res.status(204).end();
   });
 
-  app.post("/api/payment/process", async (req, res) => {
+  app.get("/api/payment/installments", async (req, res) => {
+  try {
+    const amount = parseFloat(req.query.amount as string);
+    if (isNaN(amount)) {
+      res.status(400).json({ error: "Geçersiz tutar" });
+      return;
+    }
+    const installments = await paymentService.getInstallments(amount);
+    res.json(installments);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post("/api/payment/process", async (req, res) => {
     try {
       const result = await paymentService.processPayment(req.body);
       res.json(result);
